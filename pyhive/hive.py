@@ -64,21 +64,35 @@ def connect(*args, **kwargs):
 class Connection(object):
     """Wraps a Thrift session"""
 
-    def __init__(self, host, port=10000, username=None, database='default', configuration=None):
+    def __init__(self, host, port=10000, username=None, password=None, 
+            database='default', authMechanism=None, krb_host=None,
+            krb_service='hive', configuration=None):
+        authMechanisms = set(['PLAIN', 'GSSAPI'])
+        if authMechanism not in authMechanisms:
+            raise NotImplementedError(
+                'authMechanism is either not supported or not implemented')
+
         socket = thrift.transport.TSocket.TSocket(host, port)
         username = username or getpass.getuser()
         configuration = configuration or {}
-
+        if authMechanism == 'GSSAPI':
+            configuration['krb_host'] = krb_host.encode('latin-1')
+            configuration['krb_service'] = krb_service.encode('latin-1')
         def sasl_factory():
             sasl_client = sasl.Client()
             sasl_client.setAttr(b'username', username.encode('latin-1'))
             # Password doesn't matter in PLAIN mode, just needs to be nonempty.
-            sasl_client.setAttr(b'password', b'x')
+            sasl_client.setAttr(b'password', 
+                    password.encode('latin-1') if password else b'b')
+            if authMechanism == 'GSSAPI':
+                sasl_client.setAttr(b"host", krb_host.encode('latin-1'))
+                sasl_client.setAttr(b"service", krb_service.encode('latin-1'))
             sasl_client.init()
             return sasl_client
-
+        
         # PLAIN corresponds to hive.server2.authentication=NONE in hive-site.xml
-        self._transport = thrift_sasl.TSaslClientTransport(sasl_factory, b'PLAIN', socket)
+        self._transport = thrift_sasl.TSaslClientTransport(sasl_factory,
+                authMechanism.encode('latin-1'), socket)
         protocol = thrift.protocol.TBinaryProtocol.TBinaryProtocol(self._transport)
         self._client = TCLIService.Client(protocol)
 
@@ -125,6 +139,8 @@ class Connection(object):
 
     def rollback(self):
         raise NotSupportedError("Hive does not have transactions")  # pragma: no cover
+
+
 
 
 class Cursor(common.DBAPICursor):

@@ -193,6 +193,7 @@ class HiveDialect(default.DefaultDialect):
             'host': url.host,
             'port': url.port or 10000,
             'username': url.username,
+            'password': url.password,
             'database': url.database or 'default',
         }
         kwargs.update(url.query)
